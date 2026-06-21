@@ -1,0 +1,20 @@
+# Manual steps stay LOCAL — never commit (API keys, deploy specifics)
+ManualSteps.md
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Secrets — Groq/LLM keys go in env or the host's secret store, never in git
+.env
+
+# Local DB build artifacts (rebuilt from the committed parquet)
+*.duckdb
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
