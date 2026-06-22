@@ -1,54 +1,92 @@
+---
+title: SQL Copilot
+emoji: 🛡️
+colorFrom: yellow
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 🛡️ SQL Copilot — natural language → SQL a compliance team would approve
 
 Ask a question in plain English; get **safe, executed SQL** with the result, a confidence score, and
-a hallucination check. Built over a real DuckDB warehouse with **guardrails** (no writes, row caps,
-read-only) and **hallucination detection** — not a "the LLM wrote some SQL" toy.
+a hallucination check. Built over a real DuckDB warehouse with **guardrails** (parse-time, not
+prompt-time) and **binder-based hallucination detection** — not a "the LLM wrote some SQL" toy.
 
-> **Status:** scaffolding (plan + schedule below). Results table is a template filled only from the
-> real eval run. Reuses the seeded e-commerce dataset from
-> [Browser SQL Workbench](https://github.com/PruthviVKadam/sql-workbench) (P5) — same 170k-row schema.
+> Reuses the seeded e-commerce dataset from
+> [Browser SQL Workbench](https://github.com/PruthviVKadam/sql-workbench) (P5): 12k customers ·
+> 39k orders · 118k order-items. All numbers below come from `evaluate.py` (`eval/results.md`).
 
 ## Problem → Approach → Result
 
-- **Problem:** text-to-SQL is one of the highest-value AI features and one of the easiest to get
-  dangerously wrong — it can hallucinate columns, write a query that *runs* but answers the wrong
-  question, or (worse) mutate data. No serious company ships it without guardrails and validation.
-- **Approach:** a **schema-aware** prompt (tables, types, keys, sample categorical values) →
-  generate SQL with a structured output (SQL + explanation + tables touched) → run it through a
-  **safety layer** (parse with `sqlglot`; block all DDL/DML writes; enforce `LIMIT`; reject scans
-  above a row threshold) → **execute read-only** in DuckDB → **detect hallucination** by
-  back-translating the SQL ("what question does this answer?") and sanity-checking results. Works
-  **key-free** with a deterministic fallback; richer generation when a Groq key is present (like P3).
-- **Result:** _(filled from the 50-question eval — no numbers until measured)_
+- **Problem:** text-to-SQL is high-value and easy to ship *dangerously* — it can mutate data,
+  hallucinate columns, or run a query that's valid SQL but answers the wrong question. No serious
+  team ships it without guardrails and validation.
+- **Approach:** a **schema-aware** prompt → generate SQL (Groq when a key is set) → a **safety layer**
+  (`sqlglot` parses the AST; only a single read-only `SELECT` is allowed; file-reading functions like
+  `read_csv`/`read_parquet` are denied; a row `LIMIT` is injected) → execute in a sandboxed
+  **in-memory** DuckDB → **hallucination detection** via DuckDB's own binder (`EXPLAIN`) + result
+  sanity checks. Works **key-free** (template fallback) for the demo.
+- **Result (real, key-free, from `evaluate.py`):**
 
-| Metric | Value |
+| Check | Result |
 | --- | --- |
-| Execution-match accuracy (50 hand-labeled Qs) | _TBD_ |
-| Destructive operations blocked | _TBD_ (target 100%) |
-| Hallucinated/way-off queries flagged | _TBD_ |
+| Destructive / unsafe queries **blocked** | **12 / 12** |
+| Hallucinated (unknown table/column) queries **flagged** | **4 / 4** |
+| Gold questions whose SQL passes the guard **and executes** | **15 / 15** |
 
-## Dataset
-The committed Parquet from P5: `customers` (12,000) · `orders` (39,345) · `order_items` (118,293),
-loaded into an in-process **DuckDB** warehouse. A real star-ish schema with joins, dates, and
-categaries — enough to make text-to-SQL non-trivial.
+_NL→SQL **generation accuracy** needs a Groq key and is **not** claimed here — the harness is ready
+(`evaluate.py`), exactly as RAGAS is withheld in the 10-K RAG project until actually run._
+
+## Insights
+
+- **Safety is a *parsing* problem, not a *prompting* problem.** The guard blocks 100% of destructive
+  ops by parsing the SQL and allowing only a single read-only `SELECT` — it never trusts the model to
+  "promise" not to write. And `SELECT`-only isn't automatically safe: `read_csv`/`read_parquet` are
+  `SELECT`s that read the filesystem, so they're denied explicitly (they parse as typed function
+  nodes, not anonymous ones — a real gotcha I only caught by measuring).
+- **Let the database judge hallucinations.** Matching column names in the AST false-flagged valid
+  aliases and CTE-derived columns and dropped gold to 5/15. Delegating binding to **DuckDB's own
+  binder** (`EXPLAIN`) is both simpler and correct — the engine already knows what resolves.
+- **Generation is the swappable part; the guardrails + eval are the moat.** NL→SQL is one LLM call;
+  what makes it shippable is that every query is parsed, capped, bind-checked, and sanity-checked
+  before a human sees it — and that the whole pipeline is *measured*, not vibed.
 
 ## Stack
 
-Python 3.14 · **DuckDB** · **sqlglot** (parse + guardrail enforcement) · Streamlit (or FastAPI) ·
-Groq optional (OpenAI-compatible) with a key-free deterministic fallback.
+Python 3.14 · **DuckDB** · **sqlglot** (AST guardrails) · Streamlit · Groq (optional, OpenAI-compatible)
+with a key-free template fallback. No torch.
 
-## Reproduce (once built)
+## Reproduce
 
 ```bash
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
-python build_db.py        # load P5 parquet into a DuckDB warehouse
-python eval.py            # 50 hand-labeled Qs -> execution-match + guardrail report
-streamlit run app.py     # ask in English; see SQL, result, guardrail + hallucination flags
+python evaluate.py        # 12/12 blocked · 4/4 flagged · 15/15 gold execute -> eval/results.md
+python -m pytest          # 7 tests pinning the guard + binder + gold suite
+streamlit run app.py      # ask in English; see SQL, guardrail, hallucination check, result
+```
+
+Set `GROQ_API_KEY` (free at console.groq.com) for genuine NL→SQL; without it the app uses the
+template fallback so the demo still runs.
+
+## Files
+
+```text
+db.py        in-memory DuckDB warehouse (P5 parquet) + schema introspection
+guard.py     sqlglot safety layer: single read-only SELECT, deny file funcs, inject LIMIT
+validate.py  hallucination detection via DuckDB binder (EXPLAIN) + result sanity + confidence
+generate.py  NL->SQL: Groq when keyed, else deterministic template fallback
+evaluate.py  guardrail / schema-violation / gold suites -> eval/results.md
+eval/gold.jsonl   15 hand-written (question, SQL) pairs
+app.py       Streamlit UI incl. a "safety playground"
+tests/       pytest (guard, binder, gold)
 ```
 
 ## Honesty guardrail
 
-"Blocks 100% of destructive operations" is only claimed if `eval.py`'s guardrail suite proves it on
-an adversarial query set. Execution-match and hallucination-flag rates are copied from the eval
-output over a **hand-verified** golden set (the labels are written by a human, never by an LLM).
+The headline is the **safety eval** (fully measurable without a key), not a generation-accuracy
+number I can't reproduce here. Two findings came straight from measuring and were fixed, not hidden:
+`read_csv`/`read_parquet` initially slipped the guard (10/12), and AST name-matching false-flagged
+valid gold queries (5/15) — both visible in git history.
