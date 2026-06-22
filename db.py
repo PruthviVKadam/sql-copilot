@@ -16,7 +16,9 @@ TABLES = ("customers", "orders", "order_items")
 def connect() -> "duckdb.DuckDBPyConnection":
     con = duckdb.connect()  # ephemeral, in-memory
     for t in TABLES:
-        con.execute(f"CREATE TABLE {t} AS SELECT * FROM read_parquet('{(DATA / (t + '.parquet')).as_posix()}')")
+        # CSV (not parquet): Hugging Face Spaces require LFS for *.parquet; CSV pushes cleanly.
+        # read_csv_auto infers DATE for order_date/signup_date, which the date queries rely on.
+        con.execute(f"CREATE TABLE {t} AS SELECT * FROM read_csv_auto('{(DATA / (t + '.csv')).as_posix()}')")
     return con
 
 

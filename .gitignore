@@ -18,3 +18,6 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .vscode/
+
+# Parquet rejected by HF Spaces (LFS) — warehouse data is committed as CSV instead
+data/*.parquet
