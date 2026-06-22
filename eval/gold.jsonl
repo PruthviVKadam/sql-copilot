@@ -1,0 +1,15 @@
+{"question": "How many orders are there?", "sql": "SELECT count(*) AS orders FROM orders"}
+{"question": "How many customers are in each state?", "sql": "SELECT state, count(*) AS customers FROM customers GROUP BY state ORDER BY customers DESC"}
+{"question": "Total revenue by order status", "sql": "SELECT status, sum(order_total) AS revenue FROM orders GROUP BY status ORDER BY revenue DESC"}
+{"question": "Top 5 states by number of customers", "sql": "SELECT state, count(*) AS customers FROM customers GROUP BY state ORDER BY customers DESC LIMIT 5"}
+{"question": "Revenue by product category for delivered orders", "sql": "SELECT oi.category, sum(oi.price * oi.quantity) AS revenue FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'delivered' GROUP BY oi.category ORDER BY revenue DESC"}
+{"question": "What is the average order total?", "sql": "SELECT avg(order_total) AS avg_order_total FROM orders"}
+{"question": "Number of orders per customer segment", "sql": "SELECT c.segment, count(*) AS orders FROM orders o JOIN customers c ON o.customer_id = c.customer_id GROUP BY c.segment ORDER BY orders DESC"}
+{"question": "Top 10 customers by total spend", "sql": "SELECT customer_id, sum(order_total) AS total_spend FROM orders GROUP BY customer_id ORDER BY total_spend DESC LIMIT 10"}
+{"question": "How many cancelled orders are there?", "sql": "SELECT count(*) AS cancelled FROM orders WHERE status = 'cancelled'"}
+{"question": "Monthly revenue over time", "sql": "SELECT date_trunc('month', order_date) AS month, sum(order_total) AS revenue FROM orders GROUP BY month ORDER BY month"}
+{"question": "Most popular product categories by quantity sold", "sql": "SELECT category, sum(quantity) AS qty FROM order_items GROUP BY category ORDER BY qty DESC"}
+{"question": "How many customers signed up in 2023?", "sql": "SELECT count(*) AS signups FROM customers WHERE year(signup_date) = 2023"}
+{"question": "Average number of items per order", "sql": "SELECT avg(n) AS avg_items FROM (SELECT order_id, count(*) AS n FROM order_items GROUP BY order_id) t"}
+{"question": "Revenue by customer state", "sql": "SELECT c.state, sum(o.order_total) AS revenue FROM orders o JOIN customers c ON o.customer_id = c.customer_id GROUP BY c.state ORDER BY revenue DESC"}
+{"question": "How many distinct products have been sold?", "sql": "SELECT count(DISTINCT product_id) AS products FROM order_items"}
