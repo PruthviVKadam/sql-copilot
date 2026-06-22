@@ -1,0 +1,6 @@
+duckdb>=1.0
+sqlglot>=25
+pandas>=2.0
+streamlit>=1.36
+requests>=2.31
+pytest>=8.0
